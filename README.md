@@ -1,80 +1,72 @@
-# Agentic Appointment Booking System POC
+# 🏥 Medical Appointment Assistant (Agentic POC)
 
-Receptionist-style chat that **chooses tools** and reads **live data from PostgreSQL** (doctors, schedules, bookings). The LLM drives the dialogue; the database and MCP tools are the source of truth — not hardcoded replies in the API.
+A premium, receptionist-style agent that manages doctor bookings and availability using **LangGraph**, **MCP**, and **Ollama**. Supports seamless switching between **Arabic** and **English** via text and voice.
 
-## Architecture
-- **Frontend:** React + Vite + Tailwind CSS (`frontend/`).
-- **Backend:** FastAPI + LangGraph (ReAct-style loop: model → tools → model).
-- **Tools:** MCP server (`backend/mcp_server/server.py`) exposing DB operations: roster, semantic search, availability, book, reschedule.
-- **LLM:** Ollama (default **`gemma4:e2b`**; override with `OLLAMA_MODEL`).
+---
 
-## MCP tools (dynamic / DB-backed)
+## 🚀 One-Command Deployment
+
+### Option 1: Docker (Recommended)
+The fastest way to run the entire stack (Frontend, Backend, Postgres, and Ollama) with everything automated.
+
+```bash
+docker-compose up --build
+```
+*   **What happens**: Docker pulls the required LLM models (`gemma4:e2b` and `bge-m3`), initializes the database, generates doctor embeddings, and starts the app at [http://localhost](http://localhost).
+
+### Option 2: Local Run (Direct on Mac)
+Use this if you want to run the code directly on your machine using your local Postgres and Ollama app.
+
+```bash
+./run_local.sh
+```
+*   **What happens**: This script automatically runs `uv sync`, `npm install`, pulls models via CLI, seeds your local database, and launches both the frontend and backend.
+
+---
+
+## 🌍 Bilingual Features (Arabic & English)
+- **Fluid Switching**: Speak or type in Arabic or English at any time. The agent detects the switch instantly and adapts its response language.
+- **High-Accuracy STT**: Powered by **Whisper Turbo** with custom tuning for clinical Arabic and English dialects.
+- **Bilingual Intent Detection**: Specialized regex and prompting ensure that booking, rescheduling, and doctor lookups work perfectly in both languages.
+
+---
+
+## 🛠️ Technical Architecture
+- **Frontend**: React + Vite + Vanilla CSS (Premium Dark Mode & Glassmorphism).
+- **Backend**: FastAPI + LangGraph (ReAct-style tool-calling loop).
+- **Package Management**: **`uv`** for lightning-fast Python dependency handling and **`npm`** for frontend.
+- **Intelligence**: 
+    - **LLM**: Ollama (`gemma4:e2b`).
+    - **STT**: Faster-Whisper (`turbo` model).
+    - **TTS**: Edge-TTS (Neural voices for AR/EN).
+- **Database**: PostgreSQL with **pgvector** for semantic doctor search.
+
+---
+
+## 📖 MCP Tools (Dynamic / DB-Backed)
 | Tool | Role |
 |------|------|
-| `list_doctors` | Full roster from SQL (`specialty_filter` optional). Use for “all doctors”, “who do you have”, directory browsing. |
-| `search_doctors` | pgvector semantic search (top matches + schedule summary per row). |
-| `check_doctor_availability` | One doctor: openings, booked sample, slot rules. |
-| `book_appointment` | Inserts patient + appointment after **UI confirm** and validation. |
-| `reschedule_appointment` | Updates appointment time after confirm. |
+| `list_doctors` | Fetches the full doctor roster from SQL. |
+| `search_doctors` | Performs semantic vector search to find doctors by specialty or name. |
+| `check_doctor_availability` | Returns 7-day slot capacity and schedule rules for a specific doctor. |
+| `book_appointment` | Validates and inserts a new appointment after user confirmation. |
+| `reschedule_appointment` | Updates an existing appointment time after user confirmation. |
+| `verify_patient` | Looks up a patient and their active appointments by phone number. |
 
-The FastAPI layer **does not** inject canned scheduling text into user messages; the agent must call tools to obtain facts.
+---
 
-## Prerequisites
-1. **Ollama** — [ollama.com](https://ollama.com/)
-   ```bash
-   ollama pull gemma4:e2b
-   ```
-   Other tags work; set `OLLAMA_MODEL` in `.env` (e.g. `llama3.1:8b`, `qwen2.5:7b`).
-2. **PostgreSQL** with **pgvector**.
-3. **uv** — [astral-sh/uv](https://github.com/astral-sh/uv)
+## ⚙️ Environment Configuration (`.env`)
+The system loads settings from your local `.env`. Key variables:
+- `GEMINI_API_KEY`: Required if using Gemini-based tools.
+- `OLLAMA_MODEL`: Default is `gemma4:e2b`.
+- `WHISPER_MODEL`: Default is `turbo` (pre-loaded in Docker).
+- `USE_NATIVE_AUDIO_LLM`: Set to `true` to experiment with Ollama's native multimodal audio (Gemma 4).
 
-## Environment (`.env`)
-- `DATABASE_URL` — PostgreSQL connection string.
-- `OLLAMA_BASE_URL` — default `http://localhost:11434`.
-- `OLLAMA_MODEL` — chat model tag (default in code: `gemma4:e2b`).
-- `OLLAMA_TEMPERATURE` — default `0.25`.
-- `EMBED_MODEL` — embedding model for semantic search (e.g. `bge-m3`).
-- `USE_NATIVE_AUDIO_LLM` — if `true`, voice uses **`POST /chat/audio`** (no Whisper). Mic audio bytes are base64-encoded into the **`images`** message field (**Gemma 4 + Ollama** routes native audio through that slot). See [ollama#15427](https://github.com/ollama/ollama/issues/15427). The browser sends **WebM/Opus**; Ollama may require **WAV-style** payloads to treat the blob as speech (this app does **not** transcode — use Whisper + `/chat` if recognition fails).
-- `OLLAMA_NATIVE_AUDIO_USER_CONTENT` — text paired with the clip (what you want the model to do with the recording).
-- `OLLAMA_NATIVE_AUDIO_STYLE` — **`images`** (default, Gemma 4), or **`string`** / **`array`** / **`both`** for other experiments.
-- `OLLAMA_NATIVE_AUDIO_FIELD` — scalar key for `string` / `both` (default **`audio`**).
-- `OLLAMA_NATIVE_AUDIO_ARRAY_FIELD` — list key for `array` / `both` (default **`audios`**).
-- `OLLAMA_NATIVE_AUDIO_TIMEOUT_SEC` — HTTP timeout for native-audio Ollama calls (default **`600`**).
+---
 
-## Setup
+## 🧪 Development & Testing
+If you want to run specific tests for the intent detection or booking logic:
 ```bash
-uv sync
-uv run scripts/seed_db.py
+uv run python -m tests.test_booking_guard  # (Examples)
 ```
-
-## Run
-**Two terminals** (the API starts the MCP subprocess itself):
-
-```bash
-uv run python -m backend.main
-```
-
-```bash
-cd frontend && npm install && npm run dev
-```
-
-Open http://localhost:5173 — the dev server proxies `/api` to the backend on port 8000.
-
-Optional: `frontend/.env` with `VITE_API_URL=http://localhost:8000` if not using the proxy.
-
-## Features
-- **Live roster** (`list_doctors`) and **semantic search** (`search_doctors`) with clinic hours and 7-day slot capacity on each row.
-- **Availability** per doctor via `check_doctor_availability`.
-- **Human-in-the-loop booking:** recap → Confirm in UI → `book_appointment` writes to DB.
-- **Validation** rejects placeholder patient/contact before confirm.
-- **Voice mode (AR/EN):** toggle **🎤 Voice** / **⌨️ Text** anytime. Hands-free mic (auto listen on speech, auto speak replies) with animated assistant overlay; chat scrolls behind a soft blur. Whisper STT + Edge TTS.
-
-### Speech environment (optional)
-- `WHISPER_MODEL` — default `base` (use `small` for better accuracy, slower load).
-- `WHISPER_DEVICE` / `WHISPER_COMPUTE_TYPE` — CPU defaults (`int8`).
-- `TTS_VOICE_EN` — default `en-US-JennyNeural`.
-- `TTS_VOICE_AR` — default `ar-SA-ZariyahNeural`.
-
-Speech API: `POST /speech/transcribe` (multipart audio), `POST /speech/synthesize` (JSON `{text, locale}` → MP3).
-
-> **Deployment (later):** plan for Dockerfile + `docker-compose.yml` so the full stack runs with one command; not included in this POC iteration.
+*(Note: Test files matching `test_*.py` are excluded from the Docker build for security).*

@@ -93,10 +93,11 @@ _compiled_graph = None
 
 
 def _mcp_stdio_connection() -> dict:
+    import sys
     return {
         "transport": "stdio",
-        "command": "uv",
-        "args": ["run", str(_MCP_SERVER_SCRIPT)],
+        "command": sys.executable,
+        "args": ["-m", "backend.mcp_server.server"],
         "cwd": str(_PROJECT_ROOT),
     }
 
