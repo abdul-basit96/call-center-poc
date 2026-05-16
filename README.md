@@ -12,15 +12,17 @@ The fastest way to run the entire stack (Frontend, Backend, Postgres, and Ollama
 ```bash
 docker-compose up --build
 ```
-*   **What happens**: Docker pulls the required LLM models (`gemma4:e2b` and `bge-m3`), initializes the database, generates doctor embeddings, and starts the app at [http://localhost](http://localhost).
+*   **What happens**: Docker pulls the LLM models, initializes the database, generates embeddings, and starts the app at [http://localhost](http://localhost).
 
-### Option 2: Local Run (Direct on Mac)
-Use this if you want to run the code directly on your machine using your local Postgres and Ollama app.
-
+### Option 2: Mac/Linux Local
 ```bash
 ./run_local.sh
 ```
-*   **What happens**: This script automatically runs `uv sync`, `npm install`, pulls models via CLI, seeds your local database, and launches both the frontend and backend.
+
+### Option 3: Windows Local (PowerShell)
+```powershell
+.\run_local.ps1
+```
 
 ---
 
@@ -59,14 +61,5 @@ Use this if you want to run the code directly on your machine using your local P
 The system loads settings from your local `.env`. Key variables:
 - `GEMINI_API_KEY`: Required if using Gemini-based tools.
 - `OLLAMA_MODEL`: Default is `gemma4:e2b`.
-- `WHISPER_MODEL`: Default is `turbo` (pre-loaded in Docker).
-- `USE_NATIVE_AUDIO_LLM`: Set to `true` to experiment with Ollama's native multimodal audio (Gemma 4).
-
----
-
-## 🧪 Development & Testing
-If you want to run specific tests for the intent detection or booking logic:
-```bash
-uv run python -m tests.test_booking_guard  # (Examples)
-```
-*(Note: Test files matching `test_*.py` are excluded from the Docker build for security).*
+- `WHISPER_MODEL`: Default is `turbo`.
+- `USE_NATIVE_AUDIO_LLM`: Set to `true` to experiment with Ollama's native multimodal audio.
