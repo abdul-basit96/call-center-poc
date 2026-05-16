@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS doctors (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     specialty VARCHAR(255) NOT NULL,
-    embedding vector(1024), -- bge-m3 produces 1024-dimensional vectors
+    embedding vector(1024), -- BAAI/bge-m3 (EMBED_MODEL default)
     schedule_start TIME NOT NULL DEFAULT '09:00:00',
     schedule_end TIME NOT NULL DEFAULT '17:00:00',
     slot_minutes INTEGER NOT NULL DEFAULT 30 CHECK (slot_minutes > 0 AND slot_minutes <= 240),

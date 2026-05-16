@@ -61,6 +61,8 @@ export type HealthPayload = {
   status: string;
   speech?: boolean;
   native_audio_llm?: boolean;
+  models_preloaded?: boolean;
+  models?: { embeddings?: boolean; whisper?: boolean; gemma?: boolean };
 };
 
 export async function fetchHealth(): Promise<HealthPayload | null> {
@@ -75,7 +77,7 @@ export async function fetchHealth(): Promise<HealthPayload | null> {
 
 export async function checkHealth(): Promise<boolean> {
   const h = await fetchHealth();
-  return h != null && h.status === "ok";
+  return h != null && h.status === "ok" && h.models_preloaded === true;
 }
 
 export { API_BASE };

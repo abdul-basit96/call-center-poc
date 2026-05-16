@@ -1,3 +1,6 @@
+# Usage: cp env.docker.template .env  (set HF_TOKEN), then: docker compose up --build
+name: medical-appointment-assistant
+
 services:
   db:
     image: ankane/pgvector:v0.7.0
@@ -10,38 +13,50 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
-
-  ollama:
-    image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-
-  # Automatically pulls the models on first startup
-  ollama-puller:
-    image: curlimages/curl
-    depends_on:
-      - ollama
-    entrypoint: [ "sh", "-c", "until curl -s http://ollama:11434/api/tags; do sleep 5; done; echo 'Pulling gemma4:e2b...'; curl -X POST http://ollama:11434/api/pull -d '{\"name\": \"gemma4:e2b\"}'; echo 'Pulling bge-m3...'; curl -X POST http://ollama:11434/api/pull -d '{\"name\": \"bge-m3\"}'" ]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d medical_clinic"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
 
   backend:
     build:
       context: .
       dockerfile: backend/Dockerfile
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
-      - DATABASE_URL=postgresql://postgres:password@db:5432/medical_clinic
-      - OLLAMA_BASE_URL=http://ollama:11434
-      - WHISPER_MODEL=turbo
-      - USE_NATIVE_AUDIO_LLM=true
+      HF_TOKEN: ${HF_TOKEN:?Set HF_TOKEN in .env — copy env.docker.template and accept google/gemma-4-E2B-it on Hugging Face}
+      DATABASE_URL: postgresql://postgres:password@db:5432/medical_clinic
+      WHISPER_MODEL: ${WHISPER_MODEL:-turbo}
+      WHISPER_DEVICE: cpu
+      WHISPER_COMPUTE_TYPE: int8
+      USE_NATIVE_AUDIO_LLM: ${USE_NATIVE_AUDIO_LLM:-true}
+      HF_DEVICE: ${HF_DEVICE:-cpu}
+      EMBED_MODEL: ${EMBED_MODEL:-BAAI/bge-m3}
+      HF_HOME: /cache/huggingface
+      TRANSFORMERS_CACHE: /cache/huggingface
+      SENTENCE_TRANSFORMERS_HOME: /cache/huggingface
     ports:
       - "8000:8000"
+    volumes:
+      - hf_cache:/cache/huggingface
     depends_on:
-      - db
-      - ollama
-    # No extra_hosts needed now as ollama is in the network
+      db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import json,urllib.request; d=json.load(urllib.request.urlopen('http://127.0.0.1:8000/health')); assert d.get('models_preloaded') is True\"",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 60
+      start_period: 1200s
+    restart: unless-stopped
 
   frontend:
     build:
@@ -50,8 +65,10 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   postgres_data:
-  ollama_data:
+  hf_cache:

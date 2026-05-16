@@ -32,6 +32,15 @@ def _whisper_settings() -> tuple[str, str, str]:
     )
 
 
+def is_whisper_loaded() -> bool:
+    return _whisper_model is not None
+
+
+def preload_whisper_model() -> None:
+    """Load Whisper at startup (required)."""
+    _load_whisper()
+
+
 def _load_whisper():
     global _whisper_model
     if _whisper_model is not None:
@@ -58,8 +67,12 @@ def transcribe_audio(audio_bytes: bytes, hint_locale: Optional[str] = None) -> t
     if len(audio_bytes) > max_bytes:
         raise ValueError("Audio file is too large")
 
-    model = _load_whisper()
-    
+    if _whisper_model is None:
+        raise RuntimeError(
+            "Whisper is not loaded. Startup preload must run before transcribe_audio."
+        )
+    model = _whisper_model
+
     # Use hint_locale to provide a soft prompt instead of forcing the language.
     # This allows Whisper to still detect a language switch (e.g. from AR to EN).
     prompt = None

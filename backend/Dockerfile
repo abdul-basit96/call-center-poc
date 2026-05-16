@@ -1,43 +1,37 @@
-# Use a slim Python image
+# Medical appointment assistant — API + MCP + local ML models
 FROM python:3.12-slim
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     curl \
+    libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv from the official binary
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uv/bin/
 ENV PATH="/uv/bin:${PATH}"
 
 WORKDIR /app
 
-# Copy project configuration files
-# Note: These are in the root context
 COPY pyproject.toml uv.lock ./
-
-# Install dependencies using uv
-# --frozen ensures we use the exact versions from uv.lock
 RUN uv sync --frozen --no-dev
 
-# Set the path to use the newly created virtual environment
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Pre-download the Whisper model during build
-RUN python -c "from faster_whisper import WhisperModel; WhisperModel('turbo', device='cpu', compute_type='int8')"
+# Bake Whisper + embedding weights into the image (copied into the runtime volume on first boot).
+ENV HF_HOME=/app/baked_models \
+    TRANSFORMERS_CACHE=/app/baked_models \
+    SENTENCE_TRANSFORMERS_HOME=/app/baked_models
 
-# Copy the backend and scripts folders
+RUN mkdir -p /app/baked_models \
+    && python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-m3')" \
+    && python -c "from faster_whisper import WhisperModel; WhisperModel('turbo', device='cpu', compute_type='int8')"
+
 COPY backend/ ./backend/
 COPY scripts/ ./scripts/
 COPY database/ ./database/
 
-# Copy startup script
 COPY backend/entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh
 
-# Expose port 8000
 EXPOSE 8000
-
-# Use the entrypoint script
 ENTRYPOINT ["./entrypoint.sh"]

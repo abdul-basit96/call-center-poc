@@ -9,7 +9,7 @@ from typing import Any, Literal, Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, ToolMessage
 from pydantic import BaseModel
 
@@ -48,15 +48,19 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 _DEFAULT_NATIVE_USER_TEXT = (
-    "The patient's message is spoken in the attached audio recording. "
-    "Listen and respond as the clinic receptionist; use tools for schedules and bookings."
+    "The patient spoke in the attached audio. Listen and respond as the clinic receptionist; "
+    "use tools for schedules and bookings."
 )
 
 
 def _human_message_for_native_audio(hint_locale_form: Optional[str]) -> HumanMessage:
     hl = (hint_locale_form or "").strip().lower()
     content = (
-        os.getenv("OLLAMA_NATIVE_AUDIO_USER_CONTENT", _DEFAULT_NATIVE_USER_TEXT).strip()
+        os.getenv(
+            "HF_NATIVE_AUDIO_USER_CONTENT",
+            # Deprecated alias from Ollama era; kept so existing .env files still work.
+            os.getenv("OLLAMA_NATIVE_AUDIO_USER_CONTENT", _DEFAULT_NATIVE_USER_TEXT),
+        ).strip()
         or _DEFAULT_NATIVE_USER_TEXT
     )
     if hl in ("ar", "en"):
@@ -66,7 +70,7 @@ def _human_message_for_native_audio(hint_locale_form: Optional[str]) -> HumanMes
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting MCP + agent graph…")
+    logger.info("Starting MCP, preloading models, and agent graph…")
     await init_agent_mcp()
     yield
     logger.info("Shutting down MCP…")
@@ -117,8 +121,10 @@ def _graph_config(thread_id: str) -> dict:
 
 
 def _stringify_ai_content(content: Any) -> str:
+    from backend.native_audio_llm import strip_gemma_control_tokens
+
     if isinstance(content, str) and content.strip():
-        return content.strip()
+        return strip_gemma_control_tokens(content.strip())
     if isinstance(content, list):
         parts: list[str] = []
         for block in content:
@@ -493,7 +499,24 @@ async def speech_synthesize(body: SynthesizeRequest):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "speech": True, "native_audio_llm": use_native_audio_llm()}
+    from backend.model_preload import all_models_ready, models_ready
+
+    ready = models_ready()
+    ok = all_models_ready()
+    payload = {
+        "status": "ok" if ok else "starting",
+        "speech": True,
+        "models": ready,
+        "models_preloaded": ok,
+        "native_audio_llm": use_native_audio_llm(),
+        "llm_backend": "huggingface",
+        "hf_model_id": os.getenv("HF_NATIVE_MODEL_ID", "google/gemma-4-E2B-it"),
+        "embed_model": os.getenv("EMBED_MODEL", "BAAI/bge-m3"),
+        "whisper_model": os.getenv("WHISPER_MODEL", "turbo"),
+    }
+    if not ok:
+        return JSONResponse(status_code=503, content=payload)
+    return payload
 
 
 if __name__ == "__main__":

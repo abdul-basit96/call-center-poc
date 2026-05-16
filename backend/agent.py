@@ -1,3 +1,4 @@
+import asyncio
 import contextvars
 import logging
 import os
@@ -6,9 +7,8 @@ from pathlib import Path
 from typing import Annotated, List, Optional, TypedDict
 
 from dotenv import load_dotenv
-from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage
+from langchain_core.messages import BaseMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_ollama import ChatOllama
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
@@ -23,12 +23,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
-_MCP_SERVER_SCRIPT = _PROJECT_ROOT / "backend" / "mcp_server" / "server.py"
 MCP_SERVER_NAME = "appointments"
-
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:e2b")
-OLLAMA_TEMPERATURE = float(os.getenv("OLLAMA_TEMPERATURE", "0.2"))
 
 _native_audio_b64_ctx: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
     "native_audio_b64", default=None
@@ -52,8 +47,10 @@ def take_native_audio_payload() -> Optional[str]:
     _native_audio_b64_ctx.set(None)
     return v
 
+
 _READ_TOOL_NAMES = frozenset({
     "list_doctors",
+    "search_doctors",
     "check_doctor_availability",
     "verify_patient",
     "validate_booking",
@@ -87,13 +84,12 @@ _mcp_stack: Optional[AsyncExitStack] = None
 tools: List = []
 read_tool_node = None
 write_tool_node = None
-base_chat_ollama: Optional[ChatOllama] = None
-llm = None
 _compiled_graph = None
 
 
 def _mcp_stdio_connection() -> dict:
     import sys
+
     return {
         "transport": "stdio",
         "command": sys.executable,
@@ -102,33 +98,48 @@ def _mcp_stdio_connection() -> dict:
     }
 
 
+async def _warm_mcp_embedding(tools_list: List) -> None:
+    """Run one semantic search so the MCP worker's embedding model is warm before user traffic."""
+    search = next(
+        (t for t in tools_list if getattr(t, "name", None) == "search_doctors"),
+        None,
+    )
+    if search is None:
+        logger.warning("search_doctors tool missing; skipping MCP embedding warm-up")
+        return
+    logger.info("Warming MCP embedding worker (search_doctors)…")
+    await search.ainvoke({"query": "cardiology", "limit": 1})
+
+
 async def init_agent_mcp() -> None:
-    global _mcp_client, _mcp_stack, tools, base_chat_ollama, llm, read_tool_node, write_tool_node, _compiled_graph
+    global _mcp_client, _mcp_stack, tools, read_tool_node, write_tool_node, _compiled_graph
 
     await shutdown_agent_mcp()
+
+    from backend.model_preload import preload_all_models
+
+    logger.info("Preloading API models (embedding, Whisper, Gemma)…")
+    await preload_all_models()
+
     _mcp_client = MultiServerMCPClient({MCP_SERVER_NAME: _mcp_stdio_connection()})
     stack = AsyncExitStack()
     session = await stack.enter_async_context(_mcp_client.session(MCP_SERVER_NAME))
     tools[:] = await load_mcp_tools(session, server_name=MCP_SERVER_NAME)
     logger.info("MCP tools: %s", [getattr(t, "name", "?") for t in tools])
 
+    await _warm_mcp_embedding(tools)
+
     read_tools = [t for t in tools if getattr(t, "name", None) in _READ_TOOL_NAMES]
     write_tools = [t for t in tools if getattr(t, "name", None) in _WRITE_TOOL_NAMES]
     read_tool_node = ToolNode(read_tools)
     write_tool_node = ToolNode(write_tools)
 
-    base_chat_ollama = ChatOllama(
-        model=OLLAMA_MODEL,
-        base_url=OLLAMA_BASE_URL,
-        temperature=OLLAMA_TEMPERATURE,
-    )
-    llm = base_chat_ollama.bind_tools(tools)
     _compiled_graph = build_graph()
     _mcp_stack = stack
 
 
 async def shutdown_agent_mcp() -> None:
-    global _mcp_client, _mcp_stack, tools, base_chat_ollama, llm, read_tool_node, write_tool_node, _compiled_graph
+    global _mcp_client, _mcp_stack, tools, read_tool_node, write_tool_node, _compiled_graph
     if _mcp_stack is not None:
         try:
             await _mcp_stack.aclose()
@@ -137,8 +148,6 @@ async def shutdown_agent_mcp() -> None:
         _mcp_stack = None
     _mcp_client = None
     tools.clear()
-    base_chat_ollama = None
-    llm = None
     clear_native_audio_turn()
     read_tool_node = None
     write_tool_node = None
@@ -196,7 +205,7 @@ async def prepare_context_node(state: AgentState):
 
 
 async def after_read_node(state: AgentState):
-    from datetime import datetime, timedelta
+    from datetime import datetime
 
     now = datetime.now()
     today = now.date()
@@ -215,6 +224,10 @@ async def after_read_node(state: AgentState):
 
 
 async def agent_node(state: AgentState):
+    import base64
+
+    from backend.native_audio_llm import invoke_hf_chat
+
     locale = infer_locale_from_messages(state["messages"])
     lang_context = reply_language_instruction_block(locale)
     workflow_hint = state.get("workflow_hint") or ""
@@ -229,20 +242,13 @@ async def agent_node(state: AgentState):
     lc_msgs = prompt_val.to_messages()
 
     audio_b64 = take_native_audio_payload()
-    if audio_b64:
-        if base_chat_ollama is None:
-            raise RuntimeError("Native audio requires base ChatOllama instance.")
-        from backend.native_audio_llm import invoke_ollama_with_native_audio
-
-        out = await invoke_ollama_with_native_audio(
-            base_chat_ollama,
-            lc_msgs,
-            tools,
-            audio_base64=audio_b64,
-        )
+    audio_bytes = base64.standard_b64decode(audio_b64) if audio_b64 else None
+    if audio_bytes:
+        logger.info("HF inference: native audio turn")
     else:
-        out = await llm.ainvoke(lc_msgs)
+        logger.info("HF inference: text turn")
 
+    out = await invoke_hf_chat(lc_msgs, tools, audio_bytes=audio_bytes)
     return {"messages": [out]}
 
 
@@ -261,8 +267,8 @@ def should_continue(state: AgentState) -> str:
 
 
 def build_graph():
-    if llm is None or read_tool_node is None or write_tool_node is None:
-        raise RuntimeError("LLM/tools not ready.")
+    if read_tool_node is None or write_tool_node is None:
+        raise RuntimeError("MCP tools not ready.")
 
     g = StateGraph(AgentState)
     g.add_node("prepare_context", prepare_context_node)

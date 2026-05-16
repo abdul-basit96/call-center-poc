@@ -34,7 +34,6 @@ dist-ssr/
 
 # Docker
 postgres_data/
-ollama_data/
 
 # OS
 .DS_Store

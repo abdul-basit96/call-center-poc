@@ -24,7 +24,9 @@ from backend.booking_guard import (
     validate_booking_args,
     validate_reschedule_args,
 )
+from backend.embedding_util import get_embedding, is_embedding_loaded, preload_embedding_model
 from backend.scheduling_core import (
+    doctor_row_text,
     format_doctor_name,
     list_doctors_catalog,
     parse_iso_local,
@@ -258,5 +260,40 @@ def verify_patient(
             return "\n".join(lines)
 
 
+@mcp.tool()
+def search_doctors(query: str, limit: int | None = None) -> str:
+    """Find doctors using semantic search (e.g. 'heart expert', 'skin rash', 'pediatrician')."""
+    vector = get_embedding(query)
+    if not vector:
+        return "Error: Could not process semantic search."
+
+    lim = 5 if limit is None else int(limit)
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, name, specialty, schedule_start, schedule_end, slot_minutes, schedule_weekdays
+                FROM doctors
+                ORDER BY embedding <=> %s::vector
+                LIMIT %s
+                """,
+                (vector, lim),
+            )
+            rows = cur.fetchall()
+            if not rows:
+                return "No matching doctors found."
+
+            lines = [doctor_row_text(cur, *r) for r in rows]
+            return "Top matches found via semantic search:\n" + "\n".join(lines)
+
+
 if __name__ == "__main__":
+    try:
+        logger.info("MCP worker: loading embedding model (required)…")
+        preload_embedding_model()
+        if not is_embedding_loaded():
+            raise RuntimeError("MCP worker failed to load embedding model")
+    except Exception as e:
+        logger.critical("MCP worker startup failed: %s", e)
+        sys.exit(1)
     mcp.run()

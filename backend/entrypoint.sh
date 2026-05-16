@@ -1,26 +1,24 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-echo "Waiting for Postgres to be ready..."
-until curl -s http://db:5432 || [ $? -eq 52 ]; do
-  # Note: Postgres doesn't respond to HTTP but we can check the port
-  # A better way is using a python check
-  sleep 2
-done
+export HF_HOME=/cache/huggingface
+export TRANSFORMERS_CACHE=/cache/huggingface
+export SENTENCE_TRANSFORMERS_HOME=/cache/huggingface
 
-echo "Waiting for Ollama to be ready..."
-until curl -s $OLLAMA_BASE_URL/api/tags > /dev/null; do
-  sleep 2
-done
+mkdir -p /cache/huggingface
+if [ ! -f /cache/huggingface/.volume_initialized ]; then
+  if [ -d /app/baked_models ] && [ -n "$(ls -A /app/baked_models 2>/dev/null)" ]; then
+    echo "==> Initializing Hugging Face cache volume from image…"
+    cp -a /app/baked_models/. /cache/huggingface/
+  fi
+  touch /cache/huggingface/.volume_initialized
+fi
 
-echo "Waiting for bge-m3 model to be pulled..."
-until curl -s $OLLAMA_BASE_URL/api/tags | grep -q "bge-m3"; do
-  sleep 5
-done
+echo "==> Waiting for Postgres…"
+python -m scripts.wait_for_db
 
-echo "Running Database Seed & Embedding Generation..."
-# Using -m scripts.seed_db ensures it's run as a package
+echo "==> Seeding database (schema + doctor embeddings)…"
 python -m scripts.seed_db
 
-echo "Starting FastAPI Server..."
-python -m backend.main
+echo "==> Starting API (all models preload before accepting traffic)…"
+exec uvicorn backend.main:app --host 0.0.0.0 --port 8000
