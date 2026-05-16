@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+@theme {
+  --color-clinic-50: #f0fdfa;
+  --color-clinic-100: #ccfbf1;
+  --color-clinic-400: #2dd4bf;
+  --color-clinic-500: #14b8a6;
+  --color-clinic-600: #0d9488;
+  --color-clinic-700: #0f766e;
+  --color-slate-850: #172033;
+  --color-slate-900: #0f172a;
+  --color-slate-950: #020617;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-slate-950 text-slate-100;
+  background-image: radial-gradient(ellipse 100% 60% at 50% -10%, rgb(13 148 136 / 0.15), transparent 55%);
+}
+
+/* Scrollbar */
+.chat-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.chat-scroll::-webkit-scrollbar-thumb {
+  @apply rounded-full bg-clinic-600/80;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes breathe {
+  50% { transform: scale(1.07); }
+}
+@keyframes think {
+  50% { filter: hue-rotate(18deg); transform: scale(1.03); }
+}
+@keyframes speak {
+  to { transform: scale(1.1); }
+}
+@keyframes ring {
+  from { transform: scale(0.9); opacity: 0.7; }
+  to { transform: scale(1.3); opacity: 0; }
+}
+@keyframes bar {
+  to { height: 26px; }
+}
+@keyframes bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+  30% { transform: translateY(-5px); opacity: 1; }
+}

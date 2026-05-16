@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+langgraph
+langchain
+langchain-ollama
+psycopg2-binary
+mcp
+python-dotenv
+requests
+httpx
+numpy
+pgvector
+ollama
+faster-whisper
+edge-tts
+python-multipart

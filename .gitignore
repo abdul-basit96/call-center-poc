@@ -1,0 +1,65 @@
+# Environment variables
+# .env
+# *.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Node / Frontend
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+dist/
+dist-ssr/
+*.local
+
+# Docker
+postgres_data/
+ollama_data/
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary/Scratch files
+scratch/
+*.log
+test_*.py
+test_output.txt
+test_formats_output.txt
+test_token_output.txt
+test_prefixed_output.txt
+test_minicpm_output.txt
+test_input_audio_output.txt
+test_pcm_output.txt
+test_arabic.mp3
