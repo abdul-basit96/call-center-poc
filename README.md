@@ -78,6 +78,118 @@ Then open a **new** PowerShell window and run `.\run_local.ps1` again if winget 
 
 The script checks tools, runs `uv sync` / `npm install`, pulls missing Ollama models, seeds the DB, starts API **:8000** and UI **http://localhost:5173**. Press **Ctrl+C** to stop.
 
+### 💻 Local development — frontend & backend separately
+
+Use two terminals when you want separate logs for the API and the UI.  
+**Do not skip the setup steps** — `npm run dev` alone is not enough if dependencies or the database were never installed.
+
+All commands below are run from the **project root** unless noted. On Windows, use **PowerShell**.
+
+---
+
+#### A. Requirements (install once per machine)
+
+| Requirement | Purpose |
+|-------------|---------|
+| [Ollama](https://ollama.com/) | LLM (`gemma4:e2b`) + embeddings (`bge-m3`) |
+| PostgreSQL + [pgvector](https://github.com/pgvector/pgvector) | App database (must match `.env`) |
+| [uv](https://docs.astral.sh/uv/) | Python dependencies |
+| [Node.js 20+](https://nodejs.org/) (includes **npm**) | Frontend build & dev server |
+| **ffmpeg** on PATH | Voice / speech-to-text (e.g. `winget install --id Gyan.FFmpeg` on Windows) |
+| **`.env`** in project root | Connection strings and model names (see `.env.example`) |
+
+---
+
+#### B. One-time project setup (do in order)
+
+**1. Clone the repo and open a terminal in the project folder.**
+
+**2. Configure environment**
+
+Ensure `.env` exists and `DATABASE_URL` points at your local Postgres, for example:
+
+`postgresql://postgres:password@localhost:5432/medical_clinic`
+
+**3. Install Python dependencies (backend)**
+
+```bash
+uv sync
+```
+
+**4. Install frontend dependencies**
+
+```bash
+cd frontend
+npm install
+cd ..
+```
+
+You must run `npm install` before the first `npm run dev`. Re-run it after `package.json` changes.
+
+**5. Start Ollama and pull models**
+
+Open the Ollama app, then:
+
+```bash
+ollama pull gemma4:e2b
+ollama pull bge-m3
+```
+
+**6. Seed the database (schema + doctor embeddings)**
+
+Postgres must be running on port `5432` first.
+
+```bash
+uv run python -m scripts.seed_db
+```
+
+Re-run seeding if you reset the database or change embedding logic.
+
+---
+
+#### C. Start the app (every time you develop)
+
+**Terminal 1 — Backend (port 8000)**
+
+```bash
+# project root
+uv run python -m backend.main
+```
+
+Wait until it is listening, then verify: [http://localhost:8000/health](http://localhost:8000/health) should return `"status":"ok"`.
+
+**Terminal 2 — Frontend (port 5173)**
+
+```bash
+cd frontend
+npm run dev
+```
+
+Open the UI: [http://localhost:5173](http://localhost:5173)  
+(Vite proxies `/api/*` → `http://localhost:8000`; see `frontend/vite.config.ts`.)
+
+**Stop:** `Ctrl+C` in each terminal (backend first or both).
+
+---
+
+#### D. Quick reference
+
+| Service | URL | Start command |
+|---------|-----|----------------|
+| **Frontend (UI)** | http://localhost:5173 | `cd frontend` → `npm run dev` |
+| **Backend (API)** | http://localhost:8000 | `uv run python -m backend.main` |
+| **Health check** | http://localhost:8000/health | (backend must be running) |
+
+| Common mistake | Fix |
+|----------------|-----|
+| UI loads but chat fails | Start **backend** first; check Ollama is running |
+| `npm run dev` errors | Run `npm install` inside `frontend/` |
+| Import / module errors | Run `uv sync` at project root |
+| DB errors | Check Postgres + run `uv run python -m scripts.seed_db` |
+| Voice not working | Install **ffmpeg** on the system |
+
+**Shortcut:** `./run_local.sh` (Mac/Linux) or `.\run_local.ps1` (Windows) runs steps **B.3–B.6** (if needed) and **C** in one script.
+
 ---
 
 ## 🏗️ Technical Implementation & Architecture
