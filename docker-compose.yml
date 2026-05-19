@@ -11,20 +11,6 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
 
-  ollama:
-    image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-
-  # Automatically pulls the models on first startup
-  ollama-puller:
-    image: curlimages/curl
-    depends_on:
-      - ollama
-    entrypoint: [ "sh", "-c", "until curl -s http://ollama:11434/api/tags; do sleep 5; done; echo 'Pulling gemma4:e2b...'; curl -X POST http://ollama:11434/api/pull -d '{\"name\": \"gemma4:e2b\"}'; echo 'Pulling bge-m3...'; curl -X POST http://ollama:11434/api/pull -d '{\"name\": \"bge-m3\"}'" ]
-
   backend:
     build:
       context: .
@@ -33,15 +19,18 @@ services:
       - .env
     environment:
       - DATABASE_URL=postgresql://postgres:password@db:5432/medical_clinic
-      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OLLAMA_MODEL=gemma4:e2b
+      - OLLAMA_REQUEST_TIMEOUT_SEC=600
+      - OLLAMA_KEEP_ALIVE=10m
       - WHISPER_MODEL=turbo
-      - USE_NATIVE_AUDIO_LLM=true
+      - USE_NATIVE_AUDIO_LLM=false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8000:8000"
     depends_on:
       - db
-      - ollama
-    # No extra_hosts needed now as ollama is in the network
 
   frontend:
     build:
@@ -54,4 +43,3 @@ services:
 
 volumes:
   postgres_data:
-  ollama_data:

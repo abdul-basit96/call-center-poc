@@ -1,11 +1,15 @@
-# Use a slim Python image
+# Static ffmpeg avoids apt pulling libllvm/libz3 (often OOM / exit 137 on Docker Desktop).
+FROM mwader/static-ffmpeg:7.1.1 AS ffmpeg
+
 FROM python:3.12-slim
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+COPY --from=ffmpeg /ffmpeg /usr/local/bin/ffmpeg
+COPY --from=ffmpeg /ffprobe /usr/local/bin/ffprobe
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && ffmpeg -version
 
 # Install uv from the official binary
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uv/bin/

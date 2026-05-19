@@ -34,12 +34,19 @@ A premium, state-of-the-art agentic workflow designed for clinical appointment m
 
 ## 🚀 Deployment Options
 
-### 🐳 Option 1: Docker (Single-Command)
-Perfect for a zero-configuration experience.
-```bash
-docker-compose up --build
-```
-*   **Fully Automated**: Pulls models, builds the `uv`-optimized backend, seeds the DB with embeddings, and starts the Nginx proxy.
+### 🐳 Option 1: Docker (DB + app in Docker, Ollama on host)
+Ollama runs **on your machine** (better GPU/Metal on Mac, simpler on Windows with NVIDIA). Docker runs Postgres, backend, and frontend.
+
+1. Install and start [Ollama](https://ollama.com/), then pull models:
+   ```bash
+   ollama pull gemma4:e2b
+   ollama pull bge-m3
+   ```
+2. Start the stack:
+   ```bash
+   docker compose up --build
+   ```
+*   Backend reaches host Ollama at `http://host.docker.internal:11434`.
 *   **URL**: [http://localhost](http://localhost)
 
 ### 🍎 Option 2: Mac/Linux Local
@@ -48,11 +55,28 @@ Direct execution on your host machine.
 ./run_local.sh
 ```
 
-### 🪟 Option 3: Windows Local (PowerShell)
-Native experience for Windows developers.
+### 🪟 Option 3: Windows (single command, native — no Docker)
+Same idea as `./run_local.sh` on Mac: Ollama, Postgres, backend, and frontend all run on the machine.
+
+**Prerequisites:**
+
+| Tool | Auto via script? | Notes |
+|------|------------------|--------|
+| **uv**, **Node/npm**, **Ollama**, **ffmpeg** | `.\run_local.ps1 -InstallMissing` installs all four via **winget** | May need a **new terminal** after winget installs |
+| **PostgreSQL + pgvector** | **No** — manual setup | Must match `DATABASE_URL` in your `.env` |
+| **Ollama app running** | — | Open Ollama from Start menu before / after install |
+
+**Run** (open **PowerShell** in the project folder):
 ```powershell
 .\run_local.ps1
 ```
+First time without tools installed:
+```powershell
+.\run_local.ps1 -InstallMissing
+```
+Then open a **new** PowerShell window and run `.\run_local.ps1` again if winget just installed tools.
+
+The script checks tools, runs `uv sync` / `npm install`, pulls missing Ollama models, seeds the DB, starts API **:8000** and UI **http://localhost:5173**. Press **Ctrl+C** to stop.
 
 ---
 
@@ -103,5 +127,6 @@ We use **Vector Embeddings** to bridge the gap between human queries and databas
 ## 🔧 Troubleshooting
 
 *   **Docker DB Connection**: Ensure no other service is using port `5432` on your host.
-*   **Ollama Connectivity**: If Ollama is not found in Docker, ensure your `docker-compose.yml` has `OLLAMA_BASE_URL=http://ollama:11434`.
-*   **First-Time Startup**: The first run will take a few minutes as it downloads the ~1.5GB Whisper model and LLM weights.
+*   **Ollama Connectivity (Docker)**: Start the Ollama app on the host and pull `gemma4:e2b` + `bge-m3`. Backend uses `OLLAMA_BASE_URL=http://host.docker.internal:11434`. On Linux, `extra_hosts: host-gateway` in compose is required (already set).
+*   **First-Time Startup**: Backend image pre-downloads Whisper; host Ollama must already have the LLM/embed models pulled.
+*   **Docker build `exit code 137` / `Killed` during `apt-get` or Whisper step**: Docker ran out of RAM. In Docker Desktop → **Settings → Resources**, set memory to **8 GB+** (16 GB recommended), then `docker compose build --no-cache backend`. The backend Dockerfile uses a static `ffmpeg` binary to avoid heavy apt packages (LLVM) that often trigger this on Windows.

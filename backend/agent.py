@@ -29,6 +29,8 @@ MCP_SERVER_NAME = "appointments"
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:e2b")
 OLLAMA_TEMPERATURE = float(os.getenv("OLLAMA_TEMPERATURE", "0.2"))
+OLLAMA_REQUEST_TIMEOUT_SEC = float(os.getenv("OLLAMA_REQUEST_TIMEOUT_SEC", "600"))
+OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "10m")
 
 _native_audio_b64_ctx: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
     "native_audio_b64", default=None
@@ -94,11 +96,20 @@ _compiled_graph = None
 
 def _mcp_stdio_connection() -> dict:
     import sys
+
+    # MCP stdio only inherits PATH/HOME/etc. by default — not DATABASE_URL.
+    env = {k: v for k, v in os.environ.items() if isinstance(v, str)}
+    for key in ("DATABASE_URL", "OLLAMA_BASE_URL", "EMBED_MODEL"):
+        val = os.getenv(key)
+        if val:
+            env[key] = val
+
     return {
         "transport": "stdio",
         "command": sys.executable,
         "args": ["-m", "backend.mcp_server.server"],
         "cwd": str(_PROJECT_ROOT),
+        "env": env,
     }
 
 
@@ -117,10 +128,14 @@ async def init_agent_mcp() -> None:
     read_tool_node = ToolNode(read_tools)
     write_tool_node = ToolNode(write_tools)
 
+    _ollama_client_timeout = {"timeout": OLLAMA_REQUEST_TIMEOUT_SEC}
     base_chat_ollama = ChatOllama(
         model=OLLAMA_MODEL,
         base_url=OLLAMA_BASE_URL,
         temperature=OLLAMA_TEMPERATURE,
+        keep_alive=OLLAMA_KEEP_ALIVE,
+        client_kwargs=_ollama_client_timeout,
+        async_client_kwargs=_ollama_client_timeout,
     )
     llm = base_chat_ollama.bind_tools(tools)
     _compiled_graph = build_graph()
